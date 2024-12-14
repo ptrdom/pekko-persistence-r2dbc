@@ -31,15 +31,17 @@ object R2dbcJournalSpec {
       .parseString("""pekko.persistence.r2dbc.with-meta = true""")
       .withFallback(R2dbcJournalSpec.testConfig())
 
-  def testConfig(): Config = {
+  lazy val serializationConfig =
     ConfigFactory
       .parseString(s"""
       # allow java serialization when testing
       pekko.actor.allow-java-serialization = on
       pekko.actor.warn-about-java-serializer-usage = off
       """)
+
+  def testConfig(): Config =
+    serializationConfig
       .withFallback(TestConfig.config)
-  }
 }
 
 class R2dbcJournalSpec extends JournalSpec(R2dbcJournalSpec.config) with TestDbLifecycle {
