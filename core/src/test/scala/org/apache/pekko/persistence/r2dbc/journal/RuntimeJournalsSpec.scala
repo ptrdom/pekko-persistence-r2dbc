@@ -1,25 +1,11 @@
 package org.apache.pekko.persistence.r2dbc.journal
 
+import scala.collection.immutable.ListSet
+import scala.concurrent.Await
+import scala.concurrent.duration._
 import com.typesafe.config.ConfigFactory
 import io.r2dbc.pool.ConnectionPool
 import org.apache.pekko
-import org.apache.pekko.actor.typed.ActorSystem
-import org.apache.pekko.persistence.r2dbc.ConnectionFactoryProvider
-import org.apache.pekko.persistence.r2dbc.JournalSettings
-import org.apache.pekko.persistence.r2dbc.JournalSettings
-import org.apache.pekko.persistence.r2dbc.SharedSettings
-import org.apache.pekko.persistence.r2dbc.SnapshotSettings
-import org.apache.pekko.persistence.r2dbc.SnapshotSettings
-import org.apache.pekko.persistence.r2dbc.StateSettings
-import org.apache.pekko.persistence.r2dbc.StateSettings
-import org.apache.pekko.persistence.r2dbc.TestConfig
-import org.apache.pekko.persistence.r2dbc.TestData
-import org.apache.pekko.persistence.r2dbc.TestDbLifecycle
-import org.apache.pekko.persistence.r2dbc.internal.R2dbcExecutor
-import org.apache.pekko.persistence.r2dbc.internal.R2dbcExecutor
-import org.scalatest.BeforeAndAfter
-import org.scalatest.BeforeAndAfterAll
-import org.scalatest.BeforeAndAfterEach
 import pekko.Done
 import pekko.actor.testkit.typed.scaladsl.LogCapturing
 import pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
@@ -34,19 +20,20 @@ import pekko.persistence.SelectedSnapshot
 import pekko.persistence.SnapshotProtocol.LoadSnapshot
 import pekko.persistence.SnapshotProtocol.LoadSnapshotResult
 import pekko.persistence.SnapshotSelectionCriteria
+import pekko.persistence.r2dbc.ConnectionFactoryProvider
+import pekko.persistence.r2dbc.JournalSettings
+import pekko.persistence.r2dbc.SharedSettings
+import pekko.persistence.r2dbc.SnapshotSettings
+import pekko.persistence.r2dbc.TestConfig
+import pekko.persistence.r2dbc.internal.R2dbcExecutor
 import pekko.persistence.typed.PersistenceId
 import pekko.persistence.typed.scaladsl.Effect
 import pekko.persistence.typed.scaladsl.EventSourcedBehavior
 import pekko.persistence.typed.scaladsl.RetentionCriteria
+import org.scalatest.BeforeAndAfterEach
 import org.scalatest.Inside
 import org.scalatest.freespec.AnyFreeSpecLike
-import org.scalatest.matchers.should.Matchers.convertToAnyShouldWrapper
-import org.scalatest.wordspec.AnyWordSpecLike
 import org.slf4j.LoggerFactory
-
-import scala.collection.immutable.ListSet
-import scala.concurrent.Await
-import scala.concurrent.duration._
 
 object RuntimeJournalsSpec {
 
@@ -81,51 +68,25 @@ object RuntimeJournalsSpec {
 
   private def config(journal: String) = {
     // TODO add query config
-//    val config = ConfigFactory.load(
-//      ConfigFactory.parseString(s"""
-//      $journal {
-//        journal = $${pekko.persistence.r2dbc.journal}
-//        journal.shared = $${$journal.shared}
-//
-//        snapshot = $${pekko.persistence.r2dbc.snapshot}
-//        snapshot.shared = $${$journal.shared}
-//
-//        shared = $${pekko.persistence.r2dbc.shared}
-//        shared = {
-//          connection-factory {
-//            database = "$journal"
-//          }
-//        }
-//      }
-//    """)
-//        .withFallback(TestConfig.unresolvedConfig)
-//    )
-    val config = ConfigFactory.load(TestConfig.unresolvedConfig)
-//      .withFallback(
-//        ConfigFactory.parseString(s"""
-//      $journal {
-//        journal = $${pekko.persistence.r2dbc.journal}
-//        journal.shared = $${$journal.shared}
-//
-//        snapshot = $${pekko.persistence.r2dbc.snapshot}
-//        snapshot.shared = $${$journal.shared}
-//
-//        shared = $${pekko.persistence.r2dbc.shared}
-//        shared = {
-//          connection-factory {
-//            database = "$journal"
-//          }
-//        }
-//      }
-//    """)
-//      )
-    config.getString(s"pekko.persistence.r2dbc.journal.shared.dialect") shouldBe "mysql"
-    config.getString(s"pekko.persistence.r2dbc.shared.dialect") shouldBe "mysql"
-    config.getString(s"$journal.shared.dialect") shouldBe "mysql"
-    config.getString(s"$journal.shared.connection-factory.database") shouldBe journal
-    config.getString(s"$journal.journal.shared.connection-factory.database") shouldBe journal
-    config.getString(s"$journal.snapshot.shared.connection-factory.database") shouldBe journal
-    config
+    ConfigFactory.load(
+      ConfigFactory.parseString(s"""
+      $journal {
+        journal = $${pekko.persistence.r2dbc.journal}
+        journal.shared = $${$journal.shared}
+
+        snapshot = $${pekko.persistence.r2dbc.snapshot}
+        snapshot.shared = $${$journal.shared}
+
+        shared = $${pekko.persistence.r2dbc.shared}
+        shared = {
+          connection-factory {
+            database = "$journal"
+          }
+        }
+      }
+    """)
+        .withFallback(TestConfig.unresolvedConfig)
+    )
   }
 }
 
