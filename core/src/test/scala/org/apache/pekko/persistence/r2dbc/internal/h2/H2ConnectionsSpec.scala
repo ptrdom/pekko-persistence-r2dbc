@@ -24,9 +24,17 @@ import pekko.actor.testkit.typed.scaladsl.LogCapturing
 import pekko.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import pekko.persistence.r2dbc.ConnectionFactoryProvider
 import pekko.persistence.r2dbc.JournalSettings
+import pekko.persistence.r2dbc.QuerySettings
+import pekko.persistence.r2dbc.SnapshotSettings
+import pekko.persistence.r2dbc.StateSettings
 import pekko.persistence.r2dbc.TestConfig
+import pekko.persistence.r2dbc.internal.InstantFactory
 import pekko.persistence.r2dbc.internal.R2dbcExecutor
 import pekko.persistence.r2dbc.journal.JournalDao
+import pekko.persistence.r2dbc.journal.JournalDao.SerializedJournalRow
+import pekko.persistence.r2dbc.query.scaladsl.QueryDao
+import pekko.persistence.r2dbc.snapshot.SnapshotDao
+import pekko.persistence.r2dbc.state.scaladsl.DurableStateDao
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import org.scalatest.wordspec.AnyWordSpecLike
@@ -49,6 +57,21 @@ class H2ConnectionsSpec extends ScalaTestWithActorTestKit(TestConfig.config) wit
           }
           """)
         .withFallback(TestConfig.unresolvedConfig))
+
+  // plugin settings at the root, using the H2 connection factory at `path`
+  private def pluginConfig(path: String, pluginPath: String, pluginOverrides: String, h2Overrides: String): Config = {
+    val fullConfig = h2Config(path, h2Overrides)
+    ConfigFactory
+      .parseString(s"""
+        dialect = "h2"
+        use-connection-factory = "$path"
+        use-app-timestamp = on
+        db-timestamp-monotonic-increasing = on
+        $pluginOverrides
+        """)
+      .withFallback(fullConfig.getConfig(pluginPath))
+      .withFallback(fullConfig)
+  }
 
   private def executor(path: String, config: Config): R2dbcExecutor =
     new R2dbcExecutor(
@@ -115,6 +138,58 @@ class H2ConnectionsSpec extends ScalaTestWithActorTestKit(TestConfig.config) wit
       intercept[IllegalArgumentException] {
         JournalDao.fromConfig(JournalSettings(config), config)(system, system.executionContext)
       }.getMessage should include("use-app-timestamp config must be on for H2 support")
+    }
+
+    // the tables are created from the h2 settings of the connection factory, not from the plugin settings
+    "reject a journal table that the connection factory doesn't create" in {
+      val path = "h2-other-journal-table"
+      val config = pluginConfig(path, "pekko.persistence.r2dbc.journal", """table = "other_journal"""", "")
+      intercept[IllegalArgumentException] {
+        JournalDao.fromConfig(JournalSettings(config), config)(system, system.executionContext)
+      }.getMessage should include(s"[$path.h2.journal-table]")
+    }
+
+    "reject a query journal table that the connection factory doesn't create" in {
+      val path = "h2-other-query-table"
+      val config = pluginConfig(path, "pekko.persistence.r2dbc.query", """table = "other_journal"""", "")
+      intercept[IllegalArgumentException] {
+        QueryDao.fromConfig(QuerySettings(config), config)(system, system.executionContext)
+      }.getMessage should include(s"[$path.h2.journal-table]")
+    }
+
+    "reject a snapshot table that the connection factory doesn't create" in {
+      val path = "h2-other-snapshot-table"
+      val config = pluginConfig(path, "pekko.persistence.r2dbc.snapshot", """table = "other_snapshot"""", "")
+      intercept[IllegalArgumentException] {
+        SnapshotDao.fromConfig(SnapshotSettings(config), config)(system, system.executionContext)
+      }.getMessage should include(s"[$path.h2.snapshot-table]")
+    }
+
+    "reject a durable state schema that the connection factory doesn't create" in {
+      val path = "h2-other-state-schema"
+      val config = pluginConfig(path, "pekko.persistence.r2dbc.state", """schema = "other_schema"""", "")
+      intercept[IllegalArgumentException] {
+        DurableStateDao.fromConfig(StateSettings(config), config)(system, system.executionContext)
+      }.getMessage should include(s"[$path.h2.schema]")
+    }
+
+    "write to a journal table that the connection factory is configured to create" in {
+      val path = "h2-matching-journal-table"
+      val config = pluginConfig(
+        path,
+        "pekko.persistence.r2dbc.journal",
+        """table = "other_journal"""",
+        """journal-table = "other_journal"""")
+      val dao = JournalDao.fromConfig(JournalSettings(config), config)(system, system.executionContext)
+      val now = InstantFactory.now()
+      val row =
+        SerializedJournalRow(1, "Entity", "Entity|p-1", 1L, now, now, Some(Array[Byte](1)), 1, "", "w", Set.empty, None)
+      dao.writeEvents(Seq(row)).futureValue
+      executor(path, config)
+        .selectOne("count")(
+          _.createStatement("SELECT count(*) FROM other_journal"),
+          _.get(0, classOf[java.lang.Long]).longValue())
+        .futureValue shouldBe Some(1L)
     }
   }
 }
