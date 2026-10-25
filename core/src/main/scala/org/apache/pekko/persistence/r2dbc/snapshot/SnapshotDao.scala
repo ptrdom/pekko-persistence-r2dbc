@@ -71,6 +71,11 @@ private[r2dbc] object SnapshotDao {
       case Dialect.MySQL =>
         new MySQLSnapshotDao(settings, connectionFactory, closeCallsExceeding)
       case Dialect.H2 =>
+        H2Connections.requireCreatedTable(
+          settings.useConnectionFactory,
+          connectionFactoryConfig,
+          "snapshot-table",
+          settings.snapshotsTableWithSchema)
         new H2SnapshotDao(settings, connectionFactory, closeCallsExceeding)(
           H2Connections.executionContext(system, connectionFactoryConfig),
           system)

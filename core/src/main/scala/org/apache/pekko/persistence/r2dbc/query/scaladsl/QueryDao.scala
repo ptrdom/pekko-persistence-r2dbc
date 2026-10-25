@@ -72,6 +72,11 @@ object QueryDao {
       case Dialect.MySQL =>
         new MySQLQueryDao(settings, connectionFactory, closeCallsExceeding)
       case Dialect.H2 =>
+        H2Connections.requireCreatedTable(
+          settings.useConnectionFactory,
+          connectionFactoryConfig,
+          "journal-table",
+          settings.journalTableWithSchema)
         new H2QueryDao(settings, connectionFactory, closeCallsExceeding)(
           H2Connections.executionContext(system, connectionFactoryConfig),
           system)

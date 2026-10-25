@@ -96,6 +96,11 @@ private[r2dbc] object JournalDao {
       case Dialect.MySQL =>
         new MySQLJournalDao(settings, connectionFactory, closeCallsExceeding)
       case Dialect.H2 =>
+        H2Connections.requireCreatedTable(
+          settings.useConnectionFactory,
+          connectionFactoryConfig,
+          "journal-table",
+          settings.journalTableWithSchema)
         new H2JournalDao(settings, connectionFactory, closeCallsExceeding)(
           H2Connections.executionContext(system, connectionFactoryConfig),
           system)

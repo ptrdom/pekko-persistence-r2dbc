@@ -104,6 +104,11 @@ import org.slf4j.LoggerFactory
       case Dialect.MySQL =>
         new MySQLDurableStateDao(settings, connectionFactory, closeCallsExceeding)
       case Dialect.H2 =>
+        H2Connections.requireCreatedTable(
+          settings.useConnectionFactory,
+          connectionFactoryConfig,
+          "state-table",
+          settings.durableStateTableWithSchema)
         new H2DurableStateDao(settings, connectionFactory, closeCallsExceeding)(
           H2Connections.executionContext(system, connectionFactoryConfig),
           system)

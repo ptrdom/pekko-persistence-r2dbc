@@ -90,12 +90,41 @@ private[r2dbc] object H2Connections {
     system.dispatchers.lookup(
       DispatcherSelector.fromConfig(connectionFactoryConfig.getString("h2.use-dispatcher")))
 
+  /**
+   * The tables are created from the `h2` settings of the connection factory, not from the plugin settings, so a
+   * plugin with another schema or table would only fail at its first query. Not checked when the connection is
+   * configured with a `url`, since the tables are not created then.
+   *
+   * @param tableKey
+   *   the `h2` setting of the table, `journal-table`, `snapshot-table` or `state-table`
+   */
+  def requireCreatedTable(
+      connectionFactoryPath: String,
+      connectionFactoryConfig: Config,
+      tableKey: String,
+      pluginTableWithSchema: String): Unit = {
+    val config = connectionFactoryConfig.getConfig("h2")
+    if (config.getString("url").isEmpty) {
+      val createdTableWithSchema = tableWithSchema(config, config.getString(tableKey))
+      // unquoted H2 identifiers are case insensitive
+      require(
+        createdTableWithSchema.equalsIgnoreCase(pluginTableWithSchema),
+        s"The H2 connection factory [$connectionFactoryPath] creates the table [$createdTableWithSchema], but the " +
+        s"plugin uses [$pluginTableWithSchema]. Set [$connectionFactoryPath.h2.schema] and " +
+        s"[$connectionFactoryPath.h2.$tableKey] to the schema and table of the plugin.")
+    }
+  }
+
+  private def schema(config: Config): Option[String] =
+    Option(config.getString("schema")).filter(_.trim.nonEmpty)
+
+  private def tableWithSchema(config: Config, table: String): String =
+    schema(config).map(_ + ".").getOrElse("") + table
+
   private def dbSchema(config: Config, createSliceIndexes: Boolean, additionalInit: String): String = {
-    val schema = Option(config.getString("schema")).filter(_.trim.nonEmpty)
-    def withSchema(table: String): String = schema.map(_ + ".").getOrElse("") + table
-    val journalTableWithSchema = withSchema(config.getString("journal-table"))
-    val snapshotTableWithSchema = withSchema(config.getString("snapshot-table"))
-    val durableStateTableWithSchema = withSchema(config.getString("state-table"))
+    val journalTableWithSchema = tableWithSchema(config, config.getString("journal-table"))
+    val snapshotTableWithSchema = tableWithSchema(config, config.getString("snapshot-table"))
+    val durableStateTableWithSchema = tableWithSchema(config, config.getString("state-table"))
 
     val sliceIndexes =
       if (createSliceIndexes)
@@ -106,7 +135,7 @@ private[r2dbc] object H2Connections {
           s"ON $durableStateTableWithSchema(slice, entity_type, db_timestamp, revision)")
       else Seq.empty[String]
 
-    val schemaCreation = schema.map(s => s"CREATE SCHEMA IF NOT EXISTS $s").toSeq
+    val schemaCreation = schema(config).map(s => s"CREATE SCHEMA IF NOT EXISTS $s").toSeq
 
     (schemaCreation ++ Seq(
       s"""CREATE TABLE IF NOT EXISTS $journalTableWithSchema (
