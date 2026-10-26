@@ -19,17 +19,19 @@ jobs:
       versions: ${{ steps.select.outputs.versions }}
     steps:
       - name: Checkout
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          # a pull request needs the base branch commit, a push fetches its base separately
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
 
       # Test and compile: 2.13 and 3.3 (published) on every change, 3.9 LTS and 3.10 Next nightly
-      # and on pull requests that change their versions in project/Dependencies.scala
+      # and on pull requests and pushes to main that change their versions in project/Dependencies.scala
       - name: Select Scala versions
         id: select
         env:
           EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |-
           published='"scala213","scala3"'
           testOnly='"scala3Lts","scala3Next"'
@@ -38,11 +40,19 @@ jobs:
               versions="[$testOnly]" ;;
             workflow_dispatch)
               versions="[$published,$testOnly]" ;;
-            pull_request)
-              # HEAD is the merge commit, HEAD^1 the base branch; a failing diff fails the step
-              changes=$(git diff HEAD^1 HEAD -- project/Dependencies.scala)
+            pull_request|push)
+              if [ "$EVENT_NAME" = push ]; then
+                # diff against main before the push, so all pushed commits are covered
+                git fetch --no-tags --depth=1 origin "$PUSH_BEFORE"
+                base=$PUSH_BEFORE
+              else
+                # HEAD is the merge commit, HEAD^1 the base branch
+                base=HEAD^1
+              fi
+              # a failing fetch or diff fails the step
+              changes=$(git diff "$base" HEAD -- project/Dependencies.scala)
               versions="[$published"
-              # add only the test-only versions whose line the PR changes
+              # add only the test-only versions whose line the change touches
               for alias in scala3Lts scala3Next; do
                 if grep -qE "^[+-] *val ${alias^} = " <<< "$changes"; then
                   versions="$versions,\"$alias\""
