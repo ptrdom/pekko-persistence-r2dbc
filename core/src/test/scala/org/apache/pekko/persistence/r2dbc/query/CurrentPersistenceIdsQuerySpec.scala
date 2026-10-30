@@ -52,10 +52,14 @@ class CurrentPersistenceIdsQuerySpec
   private val numberOfEntityTypes = 5
   private val entityTypes = (1 to numberOfEntityTypes).map(_ => nextEntityType())
   private val numberOfPids = 100
+  // sorted like the query results, the entity type numbers from the shared counter can have different number of
+  // digits, e.g. TestEntity-10 is before TestEntity-9
   private val pids = {
-    (1 to numberOfEntityTypes).flatMap(entityTypeId =>
-      (1 to numberOfPids / numberOfEntityTypes).map(n =>
-        PersistenceId(entityTypes(entityTypeId - 1), "p" + zeros.drop(n.toString.length) + n)))
+    (1 to numberOfEntityTypes)
+      .flatMap(entityTypeId =>
+        (1 to numberOfPids / numberOfEntityTypes).map(n =>
+          PersistenceId(entityTypes(entityTypeId - 1), "p" + zeros.drop(n.toString.length) + n)))
+      .sortBy(_.id)
   }
 
   override protected def beforeAll(): Unit = {
@@ -92,13 +96,14 @@ class CurrentPersistenceIdsQuerySpec
 
     "retrieve ids for entity type after id" in {
       val entityType = entityTypes(0)
+      val pidsOfEntityType = pids.filter(_.entityTypeHint == entityType)
       val result =
         query
-          .currentPersistenceIds(entityType = entityType, afterId = Some(pids(9).id), limit = 7)
+          .currentPersistenceIds(entityType = entityType, afterId = Some(pidsOfEntityType(9).id), limit = 7)
           .runWith(Sink.seq)
           .futureValue
 
-      result shouldBe pids.filter(_.entityTypeHint == entityType).slice(10, 17).map(_.id)
+      result shouldBe pidsOfEntityType.slice(10, 17).map(_.id)
     }
 
   }
